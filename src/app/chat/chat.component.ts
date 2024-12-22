@@ -1,9 +1,7 @@
 import {Component, ElementRef, inject, ViewChild} from '@angular/core';
 import {MatGridList, MatGridTile} from '@angular/material/grid-list';
-import {DataService} from '../service/data.service';
 import {environment} from '../environment/environment';
 import {WebSocketService} from '../service/websocket.service';
-import {Message} from '../types/message.interface';
 
 export const mediaConstraints = {
   audio: true,
@@ -30,16 +28,9 @@ export class ChatComponent {
   @ViewChild('local_video') localVideo!: ElementRef<HTMLVideoElement>;
   @ViewChild('received_video') remoteVideo!: ElementRef<HTMLVideoElement>;
   private webSocketService: WebSocketService = inject(WebSocketService);
-  // private dataService = inject(DataService);
   private peerConnection!: RTCPeerConnection; // reference to the remote party
 
-
-  ngOnInit(): void {
-
-  }
-
   ngAfterViewInit(): void {
-    console.log("ngAfterViewInit()");
     this.addIncomingMessageHandler();
     this.requestMediaDevices();
   }
@@ -60,27 +51,23 @@ export class ChatComponent {
     this.localStream.getTracks()
       .forEach(track => track.enabled = true);
     this.localVideo.nativeElement.srcObject = this.localStream;
+    this.addTracksToPeerConnection();
   }
 
   private readonly _destination = "/messages";
 
   async call(): Promise<void> {
     this.createPeerConnection();
-
-    this.localStream.getTracks()
-      .forEach(track => {
-        this.peerConnection.addTrack(track, this.localStream); // add tracks to the remote party
-      })
+    this.addTracksToPeerConnection();
 
     try {
-      const offer: RTCLocalSessionDescriptionInit = await this.peerConnection.createOffer(offerOptions);
+      const offer: RTCSessionDescriptionInit = await this.peerConnection.createOffer(offerOptions);
       await this.peerConnection.setLocalDescription(offer);
 
-      this.webSocketService.sendMessage(this._destination,{type: "offer", data: offer})
+      this.webSocketService.sendMessage(this._destination, {type: "offer", data: offer});
     } catch (err: any) {
       this.handleGetUserMediaError(err);
     }
-
   }
 
   private createPeerConnection() {
@@ -92,6 +79,15 @@ export class ChatComponent {
     this.peerConnection.ontrack = this.handleTrackEvent;
   }
 
+  private addTracksToPeerConnection() {
+    const existingTracks = this.peerConnection.getSenders().map(sender => sender.track);
+    this.localStream.getTracks().forEach(track => {
+      if (!existingTracks.includes(track)) {
+        this.peerConnection.addTrack(track, this.localStream);
+      }
+    });
+  }
+
   private closeVideoCall(): void {
     if (this.peerConnection) {
       this.peerConnection.onicecandidate = null;
@@ -100,11 +96,8 @@ export class ChatComponent {
       this.peerConnection.ontrack = null;
     }
     this.peerConnection.getTransceivers()
-      .forEach(transceivers =>
-        transceivers.stop());
+      .forEach(transceiver => transceiver.stop());
     this.peerConnection.close();
-    // this.peerConnection = null;
-
   }
 
   private handleGetUserMediaError(e: Error) {
@@ -128,7 +121,7 @@ export class ChatComponent {
   private handleICECandidateEvent = (event: RTCPeerConnectionIceEvent) => {
     console.log(event);
     if (event.candidate) {
-      this.webSocketService.sendMessage(this._destination,{
+      this.webSocketService.sendMessage(this._destination, {
         type: 'ice-candidate',
         data: event.candidate
       });
@@ -163,6 +156,7 @@ export class ChatComponent {
   private addIncomingMessageHandler() {
     this.webSocketService.getMessages()
       .subscribe(msg => {
+          console.log(" Get message of type: " + msg.type);
           switch (msg.type) {
             case 'offer':
               this.handleOfferMessage(msg.data);
@@ -191,18 +185,13 @@ export class ChatComponent {
       this.startLocalVideo();
     }
     this.peerConnection.setRemoteDescription(new RTCSessionDescription(msg))
-      .then(() => {
-        this.localVideo.nativeElement.srcObject = this.localStream;
-        this.localStream.getTracks()
-          .forEach(track => this.peerConnection.addTrack(track, this.localStream));
-      })
+      .then(() => this.addTracksToPeerConnection())
       .then(() => this.peerConnection.createAnswer())
-      .then((answer) => this.peerConnection.setLocalDescription(answer))
+      .then(answer => this.peerConnection.setLocalDescription(answer))
       .then(() => {
-        this.webSocketService.sendMessage(this._destination, {type: "data", data: this.peerConnection.localDescription})
+        this.webSocketService.sendMessage(this._destination, {type: "answer", data: this.peerConnection.localDescription});
       })
       .catch(this.handleGetUserMediaError);
-
   }
 
   private handleAnswerMessage(data: any) {
@@ -214,17 +203,16 @@ export class ChatComponent {
   }
 
   private handleICECandidatesMessage(data: any) {
-this.peerConnection.addIceCandidate(data).catch(this.reportError);
+    this.peerConnection.addIceCandidate(data).catch(this.reportError);
   }
 
-  private reportError = (err:Error) => {
-    console.log("got Error: "+ err.name)
+  private reportError = (err: Error) => {
+    console.log("got Error: " + err.name);
     console.log(err);
   }
 
-  hangUp () {
-    this.webSocketService.sendMessage(this._destination,{type: "hangup", data: ''})
+  hangUp() {
+    this.webSocketService.sendMessage(this._destination, {type: "hangup", data: ''});
     this.closeVideoCall();
   }
-
 }

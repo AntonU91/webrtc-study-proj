@@ -1,40 +1,47 @@
 import { Injectable } from '@angular/core';
-import {Client, IStompSocket} from '@stomp/stompjs';
+import { Client, IStompSocket } from '@stomp/stompjs';
 import { BehaviorSubject, Observable } from 'rxjs';
 import SockJS from 'sockjs-client';
-import {Message} from '../types/message.interface';
+import { Message } from '../types/message.interface';
 
 @Injectable({
   providedIn: 'root',
 })
-
 export class WebSocketService {
   private readonly client: Client;
-  private messages$: BehaviorSubject<Message> = new BehaviorSubject<Message>({type: '', data: ''});
+  private messages$: BehaviorSubject<Message> = new BehaviorSubject<Message>({ type: '', data: '' });
 
   constructor() {
     this.client = new Client({
-      brokerURL: 'ws://localhost:8080/ws', // URL вашего STOMP веб-сокета
-      reconnectDelay: 5000, // Автоматическая попытка подключения
+      reconnectDelay: 5000,
       debug: (str) => console.log(str),
       onConnect: () => this.onConnect(),
     });
 
-    this.client.webSocketFactory = () => new SockJS('http://localhost:8080/ws') as unknown as IStompSocket;
+    this.client.webSocketFactory = () => new WebSocket('ws://localhost:8080/ws') as unknown as IStompSocket;
     this.client.activate();
   }
 
   private onConnect(): void {
-    // Подписка на сообщения
+    console.log("Subscribe to '/topic/messages'");
     this.client.subscribe('/topic/messages', (message) => {
-      if (message.body) {
-        this.messages$.next(message as unknown as Message);
+      try {
+        if (message.body) {
+          const parsedMessage = JSON.parse(message.body) as Message;
+          this.messages$.next(parsedMessage);
+        }
+      } catch (error) {
+        console.error('Failed to process incoming message:', error);
       }
     });
   }
 
   sendMessage(destination: string, body: Message): void {
-    this.client.publish({ destination: `/app${destination}`, body: JSON.stringify(body) });
+    try {
+      this.client.publish({ destination: `/app${destination}`, body: JSON.stringify(body) });
+    } catch (error) {
+      console.error('Failed to send message:', error);
+    }
   }
 
   getMessages(): Observable<Message> {
