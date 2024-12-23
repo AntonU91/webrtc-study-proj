@@ -5,12 +5,12 @@ import { WebSocketService } from '../service/websocket.service';
 import { environment } from '../environment/environment';
 import { Message } from '../types/message.interface';
 
-const mediaConstraints = {
+ export const mediaConstraints = {
   audio: true,
   video: true
 };
 
-const offerOptions = {
+ export const offerOptions = {
   offerToReceiveAudio: true,
   offerToReceiveVideo: true
 };
@@ -61,8 +61,8 @@ export class ChatComponent implements AfterViewInit {
   }
 
   ngAfterViewInit(): void {
+    this.requestLocalMediaDevices();
     this.addIncominMessageHandler();
-    this.requestMediaDevices();
   }
 
   private addIncominMessageHandler(): void {
@@ -107,7 +107,7 @@ export class ChatComponent implements AfterViewInit {
       }
 
       await this.peerConnection.setRemoteDescription(new RTCSessionDescription(msg));
-      this.localVideo.nativeElement.srcObject = this.localStream;
+      this.localVideo.nativeElement.srcObject = this.localStream; // ??
 
       this.addTracksToPeerConnection();
 
@@ -151,7 +151,7 @@ export class ChatComponent implements AfterViewInit {
     this.peerConnection.addIceCandidate(candidate).catch(this.reportError);
   }
 
-  private async requestMediaDevices(): Promise<void> {
+  private async requestLocalMediaDevices(): Promise<void> {
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
       this.pauseLocalVideo();
@@ -194,7 +194,7 @@ export class ChatComponent implements AfterViewInit {
   private addTracksToPeerConnection(): void {
     const existingSenders = this.peerConnection.getSenders();
     this.localStream.getTracks().forEach(track => {
-      const sender = existingSenders.find(s => s.track === track);
+      const sender = existingSenders.find(sndr => sndr.track === track);
       if (!sender) {
         this.peerConnection.addTrack(track, this.localStream);
       }
